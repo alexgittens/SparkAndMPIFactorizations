@@ -1,0 +1,70 @@
+--- NEED TO MAKE /mnt3/ubuntu writable by ubuntu for convertGrib python code to work:
+use the configureInstances.sh script to mount the SSD drives for r3.8xlarge instances
+then create a /mnt3/ubuntu directory and chown it to ubuntu:ubuntu
+--- NEED TO CONFIGURE YARN:
+see the notes on my mac/the implementation on fullclimatecluster
+
+These notes serve as a high-level overview of the functions of the code in this
+repository, and a rough guide to using the code. The goal is to make it
+relatively painless for a first-time user with access to AWS to reproduce our
+EOF estimates. Read the code itself for specific details on how to call it or
+what parameters need to be set.
+
+## Setup the cluster 
+
+We need a large cluster (more for the conversion process, which needs to be
+massively parallel to finish in a reasonable time, and to ensure we have enough
+Hadoop storage to hold the climate data than because we need that much
+computational power) 
+
+I used a 37 machine cluster with m3.8xlarge instances launched from
+StarCluster, which I use to manage the installation of Hadoop, Spark, and the
+packages necessary to read GRIB format files. The specific StarCluster plugins
+used are included for completeness (I used a custom Ubuntu 15.04 AMI which can
+be provided at request, but the specific AMI shouldn't matter much *fingers
+crossed*)
+
+## Data Conversion
+
+The raw data is provided in the GRIB format, which unfortunately Spark can't
+read natively, so the first step is to convert this to a format Spark can read
+
+The code in convertGribToCSV implements the following pipeline:
+- load the data from S3 with python's pygrib toolkit
+- for each grib file, convert the desired observations into a vector of
+  observations and a binary vector indicating missing/present data
+- write these vectors as two csv files back to S3, or if you have enough space
+  on the local cluster, Hadoop
+
+This is a really slow process (more than a minute per record), so to speed up
+the conversion, we can run the same process several times on the same machine,
+and run them on several machines. convertGribToCSV allows you to specify the
+number of machines and give each a unique number, so you can launch it in
+multiple processes on several machines without them duplicating effort. It also
+writes logs indicating which records were skipped due to errors during the
+conversion process.
+
+Once the code has been converted to CSV, we read it into Spark and convert it
+to a TALL matrix, whose columns are the observations. The rows are renumbered
+to compensate for the missing rows due to records that couldn't be converted.
+This matrix is then stored in Parquet format to save space. This is then
+written to S3, if it doesn't already exist there, so this tedious conversion 
+process need only be done once.
+
+## Generation of the EOFs
+
+The code takes a reference to the data in Parquet format, then computes a
+specified number of EOFs of the data.
+
+The computational primitive used is to first form the (small)
+observation-by-observation sized covariance matrix and take its PCs, which
+capture the temporal variances, then use those PCs with some linear algebra to
+infer the spatial PCs, which capture the interaction of the measurements at the
+different measurement sites.
+
+Various preprocessing options exist:
+ - we can infer the missing observations using DINEOF, or drop them
+ - we can standardize the observations at each site by their std deviation, or
+   not.
+In all cases, we first make the observations at each site have zero mean.
+

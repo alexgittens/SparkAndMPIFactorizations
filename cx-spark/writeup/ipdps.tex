@@ -1,0 +1,90 @@
+\documentclass[10pt, conference, compsocconf]{IEEEtran}
+\usepackage{color, soul}
+\usepackage{algpseudocode}
+\usepackage{algorithm, algorithmicx}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{epstopdf}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{textcomp}
+\usepackage{cite}
+\usepackage[cmex10]{amsmath}
+\usepackage{amssymb}
+
+\DeclareMathOperator{\bigO}{\mathcal{O}}
+\def\reals{\mathbb{R}}
+\def\a{\mathbf{a}}
+\def\u{\mathbf{u}}
+\def\v{\mathbf{v}}
+
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+
+\makeatletter
+\renewcommand{\verbatim@font}{\ttfamily\scriptsize}
+\makeatother
+
+\renewcommand{\IEEEbibitemsep}{0pt plus 2pt}
+\makeatletter
+\IEEEtriggercmd{\reset@font\normalfont\footnotesize}
+\makeatother
+\IEEEtriggeratref{1}
+
+\begin{document}
+
+\title{A multi-platform evaluation of low-rank matrix factorizations in Spark}
+
+\author{\IEEEauthorblockN{%
+Alex Gittens\IEEEauthorrefmark{1}, %
+Jey Kottalam\IEEEauthorrefmark{2}, %
+Jiyan Yang\IEEEauthorrefmark{3}, 
+Michael~F. Ringenburg\IEEEauthorrefmark{4}, %
+Jatin Chhugani\IEEEauthorrefmark{5}, %
+Evan Racah\IEEEauthorrefmark{6}, \\ %
+Mohitdeep Singh\IEEEauthorrefmark{7}, %
+Yushu Yao\IEEEauthorrefmark{6}, %
+Curt Fischer\IEEEauthorrefmark{8}, %
+Oliver Ruebel\IEEEauthorrefmark{9}, %
+Benjamin Bowen\IEEEauthorrefmark{8}, %
+Norman Lewis\IEEEauthorrefmark{10},\\ %
+Michael~W. Mahoney\IEEEauthorrefmark{1}, %
+Venkat Krishnamurthy\IEEEauthorrefmark{4}, %
+Prabhat\IEEEauthorrefmark{6}} %
+\IEEEauthorblockA{\IEEEauthorrefmark{1}ICSI and Department of Statistics, UC Berkeley; Emails: gittens@icsi.berkeley.edu, mmahoney@stat.berkeley.edu}
+\IEEEauthorblockA{\IEEEauthorrefmark{2}Berkeley Institute for Data Science and EECS, UC Berkeley;
+Email: jey@berkeley.edu}
+\IEEEauthorblockA{\IEEEauthorrefmark{3}ICME, Stanford University;
+Email: jiyan@stanford.edu}
+\IEEEauthorblockA{\IEEEauthorrefmark{4}Cray Inc.;
+Emails: mikeri@cray.com, venkat@cray.com}
+\IEEEauthorblockA{\IEEEauthorrefmark{5}HiPerform Inc.; Email: jatinch@gmail.com}
+\IEEEauthorblockA{\IEEEauthorrefmark{6}NERSC Division, Lawrence Berkeley National Laboratory; Emails: eracah@lbl.gov, yyao@lbl.gov, prabhat@lbl.gov}
+\IEEEauthorblockA{\IEEEauthorrefmark{7}Georgia Institute of Technology; Email: msingh84@gatech.edu}
+\IEEEauthorblockA{\IEEEauthorrefmark{8}Life Sciences Division, Lawrence Berkeley National Laboratory; Emails: crfischer@lbl.gov, bpbowen@lbl.gov}
+\IEEEauthorblockA{\IEEEauthorrefmark{9}Computational Research Division, Lawrence Berkeley National Laboratory; Email: oruebel@lbl.gov}
+\IEEEauthorblockA{\IEEEauthorrefmark{10}Institute of Biological Chemistry, Washington State University; Email: lewisn@wsu.edu}
+}
+\maketitle
+
+\begin{abstract}
+\input{abstract.tex}
+\end{abstract}
+
+\begin{IEEEkeywords}
+matrix factorization; data analytics; high performance computing
+\end{IEEEkeywords}
+
+\input{intro.tex}
+\input{algorithm.tex}
+\input{implementation.tex}
+\input{setup.tex}
+\input{results.tex}
+\input{conclusions.tex}
+
+\bibliographystyle{IEEEtran}
+\bibliography{heromsi}
+\end{document}
+
+
+

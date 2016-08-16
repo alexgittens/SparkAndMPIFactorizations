@@ -1,0 +1,8 @@
+Parallel HDF5 read of /global/cscratch1/sd/aditya08/daya-bay/single_630000.h5
+Rank: 2
+Dimensions: 3149874 x 384 
+Time to read matrix from HDF5: 13.886967 seconds
+HDF5 Elapsed time 14.7594 seconds
+TSQR Elapsed time 0.599489 seconds
+XRAY Elapsed time 0.0767431 seconds
+Total Elapsed time 15.4716 seconds

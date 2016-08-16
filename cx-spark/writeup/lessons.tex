@@ -1,0 +1,29 @@
+The differences in performance between the Cray{\textsuperscript{\tiny\textregistered}}~XC40{\textsuperscript{\tiny\texttrademark}} system~\cite{alverson2012cray,craycascadesc12} and the experimental Cray cluster point to optimizations to Spark that could improve its performance on HPC-style architectures.  The two platforms have very similar configurations, with the primary difference being the lack of local persistent storage on the XC40 nodes.  As described in Section~\ref{sect:h2h}, this forces some of Spark's local scratch space to be allocated on the remote Lustre file system, rather than in local storage.  To mitigate this, and keep more of the scratch data local, we propose the following future work:
+\begin{itemize}
+  \item Spark cleans its local scratch space inefficiently.
+  In particular, shuffle data is not immediately cleaned up after a shuffle
+  completes. This makes fault recovery more efficient, but results in higher
+  storage requirements for scratch space. A more efficient cleaning process would
+  make it more feasible to fit the scratch data entirely in a local RAM disk and
+  avoid using Lustre.
+\item Spark does not currently allow you to configure primary and backup
+  scratch directories.  Instead you list all scratch directories in a single
+  list, and it distributes data in a round round fashion between them as long
+  as space is available.  You can bias it towards one storage device (e.g., RAM
+  disk vs. Lustre) by listing multiple directories on the preferred device.
+  Ideally, though, we would like to use a RAM disk (or other local storage)
+  exclusively unless and until it fills, and only switch to Lustre directories
+  if necessary.
+\item Spark does not allow you to specify that a scratch directory is globally
+  accessible.  Thus non-cached data is stored to the remote Lustre directory by
+  the sender, and then later retrieved by the sender and sent to the receiver.
+  This wastes a step, since the receiver could easily fetch the data directly
+  from Lustre (or any other global file system).
+\item Alternatively, a push model of communication (as opposed to the current
+  pull model) might be possible - however this would have implications for
+  reliability and handling of very large data sets.\footnote{Storing the
+    shuffle data to a large persistent block storage device, and only sending
+    it as needed, allows Spark to easily shuffle more data than could fit in
+    the remote buffers.  In a push-based model, extra logic and synchronization
+    would be necessary to ensure that the remote buffers do not overflow.}
+\end{itemize}

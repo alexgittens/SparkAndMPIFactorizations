@@ -1,0 +1,5 @@
+cat compile_and_run
+rm a.out
+source /opt/intel/./compilers_and_libraries_2016.0.109/linux/bin/iccvars.sh intel64
+mpicxx -cxx=icpc -g -O3 main.cpp rdtsc.s
+mpiexec -perhost $1 -n $1 ./a.out $1 $2 $3

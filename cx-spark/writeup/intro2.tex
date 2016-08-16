@@ -1,0 +1,99 @@
+\section{Introduction}
+\label{sec:intro}
+
+Matrix algorithms are increasingly important in many large-scale data analysis applications.  
+Essentially, the reason is that matrices (i.e., sets of vectors in Euclidean spaces) provide a convenient mathematical structure with which to model data arising in a broad range of applications:
+an $m \times n$ real-valued matrix $A$ provides a natural structure for
+encoding information about $m$ objects, each of which is described by $n$
+features;
+alternatively, an $n \times n$ real-values matrix $A$ can be used to describe
+the correlations between all pairs of $n$ data points, or the weighted
+edge-edge adjacency matrix structure of an $n$-node graph.%
+\footnote{For example, in astronomy, small angular regions of the sky imaged at a range of electromagnetic frequency bands can be represented as a matrix, where an object is a region and the features are the elements of the frequency bands;
+in genetics, DNA SNP (Single Nucleotide Polymorphism) or DNA microarray expression data can be represented in such a framework, with $A_{ij}$ representing the expression level of the $i^{th}$ gene or SNP in the $j^{th}$ experimental condition or individual; and
+in many Internet and social media applications, term-document matrices can be constructed, with $A_{ij}$ indicating the frequency of the $j^{th}$ term in the $i^{th}$ document.}
+Importantly, the data model and natural operations associated with matrices and vector spaces (i.e., scalar multiplication and vector addition) are much more sophisticated than the data model and natural operations (e.g., selects, joins, etc.) associated with traditional flat tables.
+
+In particular, the low-rank approximation to a data matrix $A$ that is provided by performing a truncated SVD (singular value decomposition)---or PCA (principal component analysis) or CX/CUR decompositions---is a very complicated object---both conceptually and computationally---compared with what is conveniently supported by traditional database operations~\cite{Skillicorn07}.
+Recall that PCA is a popular method that finds the mutually orthogonal eigencomponents that maximize the variance captured by the factorization, and CX/CUR provides an interpretable low-rank factorization by selecting a small number of columns/rows from the original data matrix as its factors.
+Described in more detail in Section \ref{sxn:low-rank-methods}, these low-rank approximation methods are popular in small- and medium-scale machine learning and scientific data analysis applications for exploratory and interactive data analysis and for providing compact and/or interpretable representations of complex matrix-based data, but their implementation at scale remains a challenge.
+
+Relatedly, the computation of quantities like eigenvectors, eigenvalues, invariant subspaces, etc., often requires complex communication patterns, with sophisticated iterative techniques that pay careful attention to numerical contitioning issues.
+Existing linear algebra code (e.g., LAPACK) is typically developed for single machines, and effort is typically devoted to minimizing the number of FLOPS (floating-point operations per second) and to do subspace iteration, Lanczos methods, etc. is involved in terms of linear algebra and communication~\cite{templates}.  
+While there has been work on minimizing communication in linear algebra algorithms~\cite{BJHS11} as well as some very large-scale HPC (high-performance computing) implementations of algorithms for common matrix problems~\cite{XXX-WHAT-IS-A-GOOD-HPC-LA-REF-HERE}, these are often specialized and require control over processors and communication, e.g., with MPI (message passing interface), thus hindering their broader applicability in many large-scale machine learning and data analysis pipelines.
+
+
+In particular, these methods do not mesh well with much of the work that has been popular recently in large scale data analysis.
+For example, MapReduce/Hadoop does such and such reading and writing at every step and thus iterative algorithms are prohibitive~\cite{DG08_CACM}. 
+Apache Spark solves some of these problems by maintiaing some additional state, but even there systems are not designed for nontrivial matrix algorithms~\cite{SPARK_NSDI_12}.
+%LA methods that ahve been applied are typically PageRank, which are basically trivial from an LA perspective.
+
+In this paper, we report our results on the performance, scalability, and applicability of several related randomized low-rank matrix approximation algorithms in a particular representative scientific application using a popular computational framework on both high-performance and cluster computing systems.
+Before providing a summary of our results, we would like to describe in more detail the motivation for the setup for our computations.
+\begin{compactitem}
+\item
+Randomized PCA and randomized CX/CUR low-rank matrix factorizations. 
+Randomization, e.g., random sampling and random projection, has proven to be a powerful computational resource for the development of improved linear algebra algorithms, both in worst-case theory and in high-quality numerical implementations~\cite{Mah-mat-rev_BOOK}; and recent results have shown that these algorithms can be implemented in parallel and distributed environments~\cite{YMM15_TR}.
+\item
+On a 1 TB mass spectrometry imaging (MSI) dataset.
+MSI provides a real science use case, where the downstream domain scientists are interested in interactivity and interpretation as well as scalability~\cite{YRPMB15}.
+This is a very different set of metrics that performing slightly better on a precision-recall metric, as is more common in typical machine learning workflows.
+In addition, this particular dataset is taken from OpenMSI~\cite{OpenMIS13}, A CLOUD COMPUTING THING THAT HAS DATA STORED AT LBL.
+\item
+Using Apache Spark. 
+This has proven to be a popular framework that addresses several of the deficiencies of MapReduce/Hadoop for very large-scale data computations, e.g., iterative computations and interactive analytics, that are particularly important for linear algebra computations.
+XXX.  JEY COMMENT.
+\item
+On an Amazon EC2 cluster, a Cray\textregistered~XC40\textsuperscript{\tiny\texttrademark}
+system~\cite{alverson2012cray,craycascadesc12}, and an experimental Cray cluster.  
+While most of the work on Spark has focused on cluster computing systems, most of the work in scientific computing and large-scale linear algebra has focused on high-performance systems, and it is of interest to understand how matrix computations perform on high-performance systems when implemented in the Spark system.
+XXX.  SOMEONE COMMENT.
+\end{compactitem}
+
+Here are our main results.
+XXX.  SHOULD THIS BE BEFORE OR AFTER THE ABOVE SET OF BULLETS.
+\begin{compactitem}
+\item
+XXX.
+\item
+XXX.
+\item
+XXX.
+\item
+We have evaluated the scaling properties in both these distributed and parallel environments for these matrix computations, and we have confirmed that we can provide PCA-based as well as interpretable CX/CUR low-rank approximation results to mass spectrometry scientists at much larger size scales than previously possible.  
+\end{compactitem}
+
+XXX.  ARCHITECTURAL TRENDS.
+
+%% Some things:
+%% 
+%% HPC versus distributed data center
+%% 
+%% High precision versus low-precision
+%% 
+%% Scientific applications versus Internet applications
+%%
+%%Interpretable and interactive analytics
+
+Here are some things to include:
+\begin{itemize}
+
+\item include discussion about what CX solves and why should the community care about it? <Michael Mahoney>  XXX.  MM TO DO IN SXN 2.
+
+\item How can database community benefit from CX? <??>  XXX.  MM TO DO IN SXN 2.
+
+\item Applicability to various domains. <Michael Mahoney>  XXX.  MM TO DO IN SXN 2 AND HERE.
+
+\item word on increasing dataset sizes (nnzs -- $10^{12}$?)  <Michael, Jey, Prabhat>
+
+ \item Why HPC problem? Why should be fast?
+
+\item Why focusing on SPARK? and not on any other platform? <Jey>
+
+\item Architecture trend... Increasing SIMD width, number of cores, etc. Memory bandwidth not increasing at the same rate. Imp. to devise algorithms that block for caches and thereby compute vs bandwidth bound <Jatin, Mike R.>
+    
+\end{itemize}
+
+
+We start with a description of matrix factorization algorithms in Section~\ref{sxn:low-rank-methods}, followed by single node and multi-node implementation details in Section~\ref{sec:implementation}. We review the experimental setup for all of our performance tests in Section~\ref{sec:setup}, followed by results and discussion in Section~\ref{sec:results}.
+

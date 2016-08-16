@@ -1,0 +1,245 @@
+\section{Results}
+\label{sec:results}
+
+%Performance Evaluation, Results, Discussion}
+
+%\textit{owners: Evan: graphs, All: interpretation (2.75 pages)}
+
+\subsection{CX Performance using C and MPI} %%on Single Node}
+  \label{sxn:results1}
+
+
+   
+%%  \vspace*{0.1in}
+
+      In Table~\ref{tab:single_node}, we show the benefits of various
+      optimizations described in
+      Sec.~\ref{sxn:single_node_opt}. 
+      %%%%
+      %%%%
+      %%%%
+      %to the performance of \textsc{MultiplyGramian} and \textsc{Multiply} on each compute node. 
+      %%
+      %%
+      %The test matrix $\mathcal{A}$ has {\it{m}} = 1.95M, {\it{n}} = 128K,
+      %{\it{s}} = 0.004, and {\it{nnz}} = 10$^9$. The parameter
+      %{\it{k}} = 32. 
+      As far as single-node performance is concerned, we started with a parallelized implementation  
+      without any of the described optimizations. %%, and measured the performance (in terms of time taken). 
+      We first implemented the multi-core synchronization scheme, wherein a single copy of the
+      output matrix is maintained, %% across all the threads (for the matrix multiplication).
+      which resulted in a speedup of 6.5X, primarily due to
+      the reduction in the amount of data traffic between 
+      main memory and caches. 
+      %%last-level cache and main memory (there was around 19X measured reduction in traffic). 
+      We then implemented our cache blocking scheme, which led to a
+      further  2.4X speedup (overall 15.6X).
+%%      primarily targeted towards ensuring that the output of the matrix multiplication resides in the caches (since it is
+%      accessed and updated frequently). This led to a further 2.4X reduction in run-time, for an overall speedup of around 15.6X.
+      We then implemented our SIMD code that sped it up by a further
+      2.6X, for an overall speedup of 39.7X. Although the 
+      SIMD width is 4, 
+        %%($\mathcal{S}$ = 4),
+        there are overheads of address
+        computation, stores, and not all computations (e.g. QR) were
+        vectorized.
+        %%(QR code is still scalar).
+
+
+
+%%     Once the memory traffic was optimized for, we implemented our
+%%     SIMD code by vectorizing the element-row multiplication-add
+%%     operations (described in detail in Sec.~\ref{sxn:single_node_opt}). 
+%%     The resultant code sped up by a further 2.6X, for an overall
+%%     speedup of 39.7X. Although the effective SIMD width
+%% ($\mathcal{S}$ = 4), there are overheads of address computation,
+%% stores, and not all computations were vectorized (QR code is still %% scalar).
+
+
+
+        As far as the multi-node performance is concerned, 
+ on the Amazon EC2 cluster, with 30 nodes (960-cores in total), and
+ the 1 TB dataset as input, it
+ took 151 seconds to perform CX computation (including time to load
+ the data into main memory). 
+%% and 92 seconds to load the data.
+ %read in data into main memory. 
+ As compared to the Scala code on the same platform (details in
+ next sec.), we achieve a speedup of 21X.
+ %%(in terms of compute time) and 6.7X (data load  + compute time.)
+%
+ % We did a head-to-head comparison of C code with the Scala node, 
+ %%%%implementation on a single node, 
+ %and measured a performance gap of around 21X.
+ This performance gap can be attributed to the careful cache
+ optimizations of maintaining single copy of the output matrix shared
+ across threads, bandwidth friendly access of matrices and vector
+ computation using SIMD units.
+
+ Some of these optimizations can be implemented in Spark, such as arranging the
+ order of memory accesses to make efficient use of memory. %%of the memory bus.
+ However, other optimizations such as sharing the output matrix between threads
+ and use of SIMD intrinsics fall outside the Spark programming model, and would
+ require piercing the abstractions provided by Spark and JVM.
+ %to more directly access and manipulate the hardware.
+ Thus there is a tradeoff between optimizing performance 
+ and ease of implementation, %% and efficient global scheduling, 
+ available by expressing programs in the Spark programming model.
+
+ 
+  \begin{table}
+  \begin{center}
+  \begin{tabular}{ |c|c| } 
+  \hline
+  Single Node Optimization & Overall Speedup\\
+  \hline
+  Original Implementation & 1.0  \\
+  Multi-Core Synchronization & 6.5 \\
+  Cache Blocking & 15.6 \\
+  SIMD & 39.7 \\
+  \hline
+
+  \end{tabular}
+  \end{center}
+  \caption{Single node opt. to CX C implementation and
+  subsequent speedup  each additional optimization provides.}
+  \label{tab:single_node}
+  \end{table}
+ 
+
+
+
+  \subsection{CX Performance Using Spark} %% on Spark} across Multiple Nodes}
+%  \textcolor{red}{Mike R, Jatin: we need a narrative here}
+
+  \subsubsection{CX Spark Phases}
+  Our implementations of CX and PCA share the \textsc{RandomizedSVD} subroutine, which accounts for the bulk of the runtime and all of the distributed computations.
+  The execution of \textsc{RandomizedSVD} proceeds in four distributed phases listed below, along with a small amount of additional local computation.
+  \begin{enumerate}
+      \item \textbf{Load Matrix Metadata}
+         The dimensions of the matrix are read from the distributed filesystem to the driver.
+      \item \textbf{Load Matrix}
+         A distributed read is performed to load the matrix entries into an in-memory cached
+         RDD containing one entry per row of the matrix.
+      \item \textbf{Power Iterations}
+          The \textsc{MultiplyGramian} loop (lines 2-5) of
+         \textsc{RandomizedSVD} is run to compute an approx. $Q$
+         of the dominant right singular subspace.
+       \item \textbf{Finalization (Post-Processing)}
+           Right multiplication by $Q$ (line 7) of \textsc{RandomizedSVD} to compute $C$.
+  \end{enumerate}
+
+  \subsubsection{Empirical Results}
+
+    \begin{figure} [h!btp]
+    \begin{centering}
+    \includegraphics[scale=0.4]{images/CX_Strong_Scaling_New_Colors_Axes_Rank_32_Partitions_default.pdf}
+    \end{centering}
+    \caption{ Strong scaling for the 4 phases of CX on an XC40 for 100GB dataset at $k=32$ and default partitioning as concurrency is increased.} 
+    \label{fig:xc40scaling}
+    \end{figure} 
+
+Fig.~\ref{fig:xc40scaling} shows how the distributed Spark portion of our code scales. %% as we add additional processors.  
+We considered 240, 480, and 960 cores.  An additional doubling (to 1920 cores) would be ineffective as there are only 1654 partitions, 
+so many cores would remain unused.  
+%%%In addition, with fewer partitions per core there are fewer opportunities for load balancing and speculative reexecution of slow tasks.
+%%
+When we go from 240 to 480 cores, we achieve a speedup of 1.6x: %% from doubling the cores: 
+233 seconds versus 146 seconds.  However, as the number of partitions per core drops 
+below two, and the amount of computation-per-core relative to communication overhead drops, 
+the scaling slows down (as expected).  
+This results in a lower speedup of 1.4x (146 seconds versus 102
+seconds) from 480 to 960 cores.
+%%when we double the core count to 960.
+
+  \subsection{CX Performance across Multiple Platforms}
+  \label{sect:h2h}
+    
+    \begin{figure} [h!btp]
+    \begin{centering}
+      \includegraphics[scale=0.4]{images/CX_Size_Scaling_EXP_CC_xc40_ec2_Rank_16_and_32_Partitions_default.pdf}
+    \end{centering}
+    \caption{ Run times for the various stages of computation of CX on the three platforms using $k=16$ and $k=32$ on the 1 TB size dataset, using the default partitioning on each platform.} 
+    \label{fig:h2hrank16} 
+    \end{figure}
+
+    
+  \input{h2hresults.tex}
+
+  
+%  \subsection{Timing and Accuracy comparison of RSVD, CX, and truncated SVD}
+
+% Because the RSVD allows us to explicitly control its accuracy by tuning the number of iterations $q$,
+% the reconstruction error of the low-rank approximation obtained from the RSVD
+% algorithm is expected to be somewhat lower than that of truncated SVD
+% approximation. Similarly, CX decompositions have the advantage of
+% interpretability, but come at the cost of an increased number of operations on
+% top of the RSVD and an additional loss in approximation accuracy. 
+
+%  In Figures~\ref{fig:timing-accuracy-8} and~\ref{fig:timing-accuracy-16}, we observe the timing vs accuracy tradeoffs of the RSVD and CX algorithms
+%  as applied to the 100G MSI dataset for two settings of the rank parameter, $k=8$ and $k=16$. The exact SVD was computed in this case using the
+%  Spark bindings of the popular ARPACK eigenproblem library~\cite{ArpackUserGuide}. The RSVD algorithm used two power iterations, and we used the output of the RSVD algorithm to generate
+%  both the column CX decomposition defined in Algorithm~\ref{alg:cx} and a related `row CX' decomposition that comes from applying Algorithm~\ref{alg:cx}
+%  to $A^T.$ As explained in more detail in the next section, both of these CX decompositions are of interest, as they identify important pixels and ions.
+%
+%  For both rank parameters, we observe the behavior predicted by the theory for the RSVD decomposition: the approximation error is only slightly greater than that of the 
+%  truncated SVD approximation. We also observe that there is only a slight speed advantage to using the RSVD; this is likely attributable to the fact that the input matrix
+%  is truly low-rank (more than 70\% of the Frobenius norm of the matrix is already captured by the rank-8 decomposition), so the iterative ARPACK SVD algorithm converges 
+%  quite fast.
+%
+%  The CX decompositions require significantly more time to compute than the truncated SVD and RSVD decompositions. This is due to the need to compute the projection of $A$ onto
+%  the columns $C$ after $C$ is constructed according to Algorithm~\ref{alg:cx}. We also note that for the MSI dataset, row-based CX decompositions are more 
+%  accurate and less expensive to construct than column-based CX decompositions. 
+%
+%  \begin{figure}[h!btp]
+%    \begin{centering}
+%      \includegraphics[scale=0.4]{images/timing-accuracy-8}
+%      \end{centering}
+%      \caption{The Frobenius norm approximation errors and timings for three runs of the RSVD and CX approximations relative to those of the truncated SVD for a target rank of $8$ on the 100G MSI dataset.}
+%    \label{fig:timing-accuracy-8}
+%  \end{figure}
+%
+%  \begin{figure}[h!btp]
+%    \begin{centering}
+%      \includegraphics[scale=0.4]{images/timing-accuracy-16}
+%      \end{centering}
+%      \caption{The Frobenius norm approximation errors and timings for three runs of the RSVD and CX approximations relative to those of the truncated SVD for a target rank of $16$ on the 100G MSI dataset.}
+%    \label{fig:timing-accuracy-16}
+%  \end{figure}
+
+  \subsection{Science Results}
+  
+  \begin{figure}[h!bt]
+    \centering
+    \includegraphics[width=.9\columnwidth]{images/cx_ions.pdf}
+      \caption{Normalized leverage scores (sampling probabilities) for $m/z$ marginalized over $\tau$.
+        Three narrow regions of $m/z$ account for $59.3\%$ of the total probability mass.}
+      \label{fig:cx_ions}
+  \end{figure} 
+
+  The rows and columns of our data matrix $A$ correspond to pixels and $(\tau, m/z)$ values of ions, respectively. 
+  We compute the CX decompositions of both $A$ and $A^T$ in order to identify important ions in addition to important pixels.
+   
+  In Figure~\ref{fig:cx_ions}, we present the distribution of the normalized
+  ion leverage scores marginalized over $\tau$. That is, each score corresponds
+  to an ion with $m/z$ value shown in the $x$-axis. Leverage scores of ions in
+  three narrow regions have significantly larger magnitude than the rest. This
+  indicates that these ions are more informative and should be kept as basis
+  for reconstruction.  Encouragingly, several other ions with significant
+  leverage scores are chemically related to the ions with highest leverage
+  scores.  For example, the ion with an $m/z$ value of 453.0983 has the second
+  highest leverage score among the CX results.  Also identified as having
+  significant leverage scores are ions at $m/z$ values of 439.0819, 423.0832,
+  and 471.1276, which correspond to neutral losses of $\rm{CH_2}$,
+  $\rm{CH_2O}$, and a neutral ``gain'' of $\rm{H_2O}$ from the 453.0983 ion.
+  These relationships indicate that this set of ions, all identified by CX as
+  having significant leverage scores, are chemically related.  That fact
+  indicates that these ions may share a common biological origin, despite
+  having distinct spatial distributions in the plant tissue sample.
+  
+
+  \subsection{Improving Spark on HPC Systems}
+  \label{sect:lessons}
+  
+  \input{lessons.tex}
+

@@ -1,0 +1,76 @@
+    \begin{table*}
+    \begin{center}
+    \begin{tabular}{| l | c | c | c | c | c | c |}
+    \toprule
+    \textbf{Platform} & \textbf{Total} & \textbf{Load} & \textbf{Time Per} & \textbf{Average} & \textbf{Average} & \textbf{Average} \\
+                               & \textbf{Runtime} & \textbf{Time} & \textbf{Iteration} & \textbf{Local} & \textbf{Aggregation} & \textbf{Network} \\
+                               & & & & \textbf{Task} & \textbf{Task} & \textbf{Wait} \\
+    \midrule
+    Amazon EC2 \texttt{r3.8xlarge} & 24.0 min & 1.53 min & 2.69 min & 4.4 sec & 27.1 sec & 21.7 sec \\
+    \midrule
+    Cray XC40 & 23.1 min& 2.32 min & 2.09 min &  3.5 sec & 6.8 sec & 1.1 sec \\
+    \midrule
+    Experimental Cray cluster & 15.2 min & 0.88 min & 1.54 min &  2.8 sec & 9.9 sec & 2.7 sec \\
+   \bottomrule
+    \end{tabular}
+    \end{center}
+    \caption{Total runtime for the 1 TB dataset ($k=16$), broken down into load time and per-iteration time. The per-iteration time is further broken down into the average time for each task of the local stage and each task of the aggregation stage.  We also show the average amount of time spent waiting for a network fetch, to illustrate the impact of the interconnect.}
+    \label{tab:h2hres1TB}
+    \end{table*}
+    
+Table~\ref{tab:h2hres1TB} shows the total runtime of CX for the 1 TB dataset on
+our three platforms.  The distributed Spark portion of the computation is also
+depicted visually in Figure~\ref{fig:h2hrank16} for $k=16$ and $k=32$ on the 1
+TB dataset.  All three platforms were able to successfully process the 1 TB
+dataset in under 25 minutes.  As the table and figure illustrates, most of the
+variation between the platforms occurred during the \texttt{MultiplyGramian}
+iterations.  We now explore how these difference relate to the performance of the matrix
+iterations.
+
+Spark divides each iteration into two stages.  The first \emph{local}
+stage computes each row's contribution, sums the local results (the
+rows computed by the same worker node), and records these %%locally-aggregated 
+results.  The second \emph{aggregation} stage combines all of the workers' locally-aggregated results using a tree-structured reduction.  Most of the variation between platforms occurs during the aggregation phase, where data from remote worker nodes is fetched and combined.  In Spark, all inter-node data exchange occurs via \emph{shuffle operations}.  In a shuffle, workers with data to send write the data to their local scratch space.  Once all data has been written, workers with data to retrieve from remote nodes request that data from the sender's block manager, which in turns retrieves if from the senders local scratch space, and sends it over the interconnect to the receiving node.
+
+Examining our three platforms (Table~\ref{tab:hwspecs}), we notice two key hardware differences that impact shuffle operations:
+\begin{itemize}
+\item First, both the EC2 nodes and the experimental Cray cluster nodes have fast SSD storage local to the compute nodes that they can use to store Spark's shuffle data.  
+The Cray{\textsuperscript{\tiny\textregistered}}~XC40{\textsuperscript{\tiny\texttrademark}} system's~\cite{alverson2012cray,craycascadesc12} nodes, on the other hand, have no local persistent storage devices.  Thus we must emulate local storage with a remote Lustre filesystem.  The impacts of this can be somewhat mitigated, however, by leaving sufficient memory to store some of the data in a local RAM disk, and/or to locally cache some of the remote writes to Lustre.\footnote{This is an ideal usage of caching, since Spark assumes the scratch space is only locally accessible; thus we are guaranteed that the only node that reads a scratch file will be the same node that wrote it.}
+\item Second, the Cray XC40 and the experimental Cray cluster both communicate over the HPC-optimized Cray Aries 
+interconnect~\cite{alverson2012cray,craycascadesc12}, while the EC2 nodes use 10 Gigabit Ethernet.
+\end{itemize}  
+We can see the impact of differing interconnect capabilities in the Average Network Wait column in Table~\ref{tab:h2hres1TB}.   These lower average network wait times explain why the two Cray platforms outperform the EC2 instance (with the experimental cluster achieving a speedup of roughly 1.5x over EC2).  
+
+   \begin{figure}
+    \begin{centering}
+    \includegraphics[scale=0.4]{images/boxplot_read_write_task_new_Rank_16_1T_default_partitions.pdf}
+    \end{centering}
+    \caption{A box and whisker plot of the distribution of local (write) and aggregation (read) task times on our three platforms for the 1TB dataset with $k=16$.  The boxes represent the 25th through 75th percentiles, and the lines in the middle of the boxes represent the medians.  The whiskers are set at 1.5 box widths outside the boxes, and the crosses are outliers (results outside the whiskers).  Note that each iteration has 4800 write tasks and just 68 read tasks.}
+    \label{fig:rwtaskdist} 
+    \end{figure}
+
+The XC40 is still slightly slower than the experimental Cray cluster, however.
+Part of this difference is due to the slower matrix load phase on the XC40.  On
+EC2 and the experimental Cray cluster, the input matrix is stored in SSDs on
+the nodes running the Spark executors.  Spark is aware of the location of the
+HDFS blocks, and attempts to schedule tasks on the same nodes as their input.
+The XC40, however, lacks SSDs on its compute nodes, so the input matrix is
+instead stored on a parallel Lustre file system.  The increased IO latency
+slows the input tasks. The rest of the difference in performance can be
+understood by looking at the distribution of local (write) task times in the
+box and whiskers plot in Figure~\ref{fig:rwtaskdist}.  The local/write tasks
+are much more numerous than the aggregation/read tasks (4800 vs 68 per
+iteration), thus they have a more significant impact on performance.  We see
+that the XC40 write tasks had a similar median time to the experimental
+cluster's write tasks, but a much wider distribution.  The large tail of slower
+"straggler" tasks is the result of some shuffle data going to the remote Lustre
+file system rather than being cached locally. We enabled Spark's optional
+speculative re-execution (\texttt{spark.speculation}) for the XC40 runs, and
+saw that some of these tasks were successfully speculatively executed on
+alternate nodes with more available OS cache, and in some case finished
+earlier.  This eliminated many of the straggler tasks and brought our
+performance closer to the experimental Cray cluster, but still did not match it
+(the results in Figure~\ref{fig:h2hrank16} and Table~\ref{tab:h2hres1TB}
+include this configuration optimization).  We discuss future directions for
+improving the performance on Spark on HPC systems in
+Section~\ref{sect:lessons}.

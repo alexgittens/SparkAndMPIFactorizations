@@ -1,0 +1,72 @@
+
+\subsection{CX and PCA Implementation in Spark}
+
+To support operating on datasets larger than can be stored and processed on a single node,
+we implement the algorithms using the Apache Spark cluster computing framework.
+%%%
+Spark provides a high-level programming model and execution engine for
+fault-tolerant parallel and distributed computing, based on a core 
+abstraction called \textit{resilient distributed dataset (RDD)}.
+RDDs are immutable lazily materialized distributed collections supporting functional
+programming operations such as \texttt{map}, \texttt{filter}, and \texttt{reduce},
+each of which returns a new RDD.
+RDDs may be loaded from a distributed file system, computed from other RDDs,
+or created by parallelizing a collection created within the user's application.
+RDDs of key-value pairs may also be treated as associative arrays, supporting
+operations such as \texttt{reduceByKey}, \texttt{join}, and \texttt{cogroup}.
+Spark employs a lazy evaluation strategy for efficiency.
+Another major benefit of Spark over MapReduce is the use of in-memory caching and storage so that data structures
+can be reused. %% rather than being recomputed.
+
+\subsection{Multi-node Spark Implementation}
+\label{sec:cx_spark}
+The main consideration when implementing CX and PCA %%in a parallel setting 
+are
+efficient implementations of operations involving the data matrix $A$.
+All access of $A$ by the CX and PCA algorithms occurs through the
+\textsc{RandomizedSVD} routine shared in common.
+\textsc{RandomizedSVD} in turn accesses $A$ only through the \textsc{MultiplyGramian} and
+\textsc{Multiply} routines, with repeated invocations of \textsc{MultiplyGramian}
+accounting for the majority of the %%algorithm's 
+execution time.
+
+The matrix $A$ is stored as an RDD containing one \texttt{IndexedRow} per row of the input matrix,
+where each \texttt{IndexedRow} consists of the row's index and corresponding data vector.
+This is a natural storage format for many datasets stored on a distributed or shared file
+system, where each row of the matrix is formed from one record of the
+input dataset, thereby preserving locality by not requiring data shuffling
+during construction of $A$.
+
+We then express \textsc{MultiplyGramian} in a form amenable to efficient distributed implementation
+by exploiting the fact that the matrix product $A^TAB$ can be written as a sum of outer products,
+as shown in Algorithm~\ref{alg:gram}. This allows for full parallelism across the rows of the matrix with
+each row's contribution computed independently, followed by a summation step to accumulate the result.
+This approach may be implemented in Spark as a \texttt{map} to form the outer products followed by a \texttt{reduce}
+to accumulate the results:
+\begin{verbatim}
+def multiplyGramian(A: RowMatrix, B: LocalMatrix) =
+  A.rows.map(row => row * row.t * B).reduce(_ + _)
+\end{verbatim}
+However, this approach forms $2m$ unnecessary temporary matrices of same dimension as the output matrix $n\times k$,
+with one per row as the result of the \texttt{map} expression, and the \texttt{reduce} is not done in-place so it
+too allocates a new matrix per row.
+This results in high Garbage Collection (GC) pressure and makes poor use of the CPU cache, so
+we instead remedy this by accumulating the results in-place by replacing the \texttt{map}
+and \texttt{reduce} with a single \texttt{treeAggregate}.
+The \texttt{treeAggregate} operation is equivalent to a map-reduce that executes in-place to accumulate the contribution of a
+single worker node, followed by a
+tree-structured reduction that efficiently aggregates the results from each worker.
+The reduction is performed in multiple stages using a tree topology to avoid creating a single
+bottleneck at the driver node to accumulate the results from each worker node.
+Each worker emits a relatively large result with dimension $n\times k$, so the
+communication latency savings of having multiple reducer tasks is significant.
+\begin{verbatim}
+def multiplyGramian(A: RowMatrix, B: LocalMatrix) = {
+  A.rows.treeAggregate(LocalMatrix.zeros(n, k))(
+    seqOp = (X, row) => X += row * row.t * B,
+    combOp = (X, Y) => X += Y
+  )
+}
+\end{verbatim}
+
+

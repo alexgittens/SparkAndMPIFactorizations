@@ -1,0 +1,31 @@
+local/spark/ec2/spark-ec2 -k amplaboregon -i ~/.ssh/amplaboregon.pem -s 30 --instance-type=r3.8xlarge --placement-group=pcagroup --copy-aws-credentials --hadoop-major-version=yarn --spot-price=2 --region=us-west-2 launch pcacluster
+
+local/spark/ec2/spark-ec2 --region=us-west-2 get-master pcacluster
+export MASTER=...
+ssh -i ~/.ssh/amplaboregon.pem root@$MASTER
+
+ephemeral-hdfs/bin/hadoop distcp s3n://agittens-research/CFSROparquet CFSROparquet
+
+curl https://bintray.com/sbt/rpm/rpm | sudo tee /etc/yum.repos.d/bintray-sbt-rpm.repo
+sudo yum install sbt
+
+git clone https://github.com/rustandruin/large-scale-climate.git
+cd large-scale-climate
+mkdir eventLogs
+mkdir data
+sbt assembly
+
+yum install -y --enablerepo=epel atlas atlas-devel lapack-devel blas-devel
+# atlas creates a file in /etc/ld.so.conf.d/ that's included by /etc/ld.so.conf, so rerun ldconfig so the lapack and blas shared object files are available
+ldconfig
+pssh -h ~/spark/conf/slaves 'yum install -y --enablerepo=epel atlas atlas-devel lapack-devel blas-devel; ldconfig'
+
+export PATH=$PATH:~/spark/bin
+screen
+sbt submit
+
+if you need to compare inexact  and exact, you'll need to use msgpack,
+  assuming under python:
+
+  easy_install pip
+  pip install u-msgpack-python

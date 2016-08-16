@@ -1,0 +1,17 @@
+#!/bin/bash -l
+#this file is run.pbs
+#PBS -q ccm_queue
+#PBS -l mppwidth=2904
+#PBS -l walltime=24:00:00
+#PBS -e mysparkjob_$PBS_JOBID.err
+#PBS -o mysparkjob_$PBS_JOBID.out
+
+cd $PBS_O_WORKDIR
+module load spark
+env | tee $HOME/.ssh/environment
+
+ccmrun sh $PWD/runspark.sh
+
+
+
+

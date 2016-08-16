@@ -1,0 +1,13 @@
+.history
+target/*
+project/project/*
+project/target/*
+*.log
+eventLogs/*
+*.swp
+runlog*
+grib_conversion*
+conversion_error_log
+data/*
+*.out
+metastore_db/*

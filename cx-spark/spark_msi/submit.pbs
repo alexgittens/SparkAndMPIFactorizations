@@ -1,0 +1,23 @@
+#!/bin/bash -l
+#PBS -q ccm_int
+#PBS -l mppwidth=1536
+#PBS -l walltime=00:30:00
+#PBS -e logs/mysparkjob_$PBS_JOBID.err
+#PBS -o logs/mysparkjob_$PBS_JOBID.out
+#source /etc/profile.d/modules.sh
+if [ ! -z "$PBS_O_WORKDIR" ]; then
+    cd "$PBS_O_WORKDIR"
+fi
+module unload altd
+module load ccm
+module load java
+module load python
+module load lxml
+module load spark/1.2.1
+mkdir -p "$SCRATCH/spark/local"
+export SPARK_LOCAL_DIRS=/dev/shm,$SCRATCH/spark/local
+export SPARK_EVENTLOG_DIR=file:///$SCRATCH/spark/$PBS_JOBID/eventlogs
+export PERFLOG_DIR=$SCRATCH/spark/$PBS_JOBID/perflogs
+mkdir -p "$PERFLOG_DIR"
+env > ~/.ssh/environment
+ccmrun bash $PWD/runspark.sh spark_msi.py

@@ -1,0 +1,9 @@
+target/*
+project/*
+!project/plugin.sbt
+testdata.h5
+eventLogs/
+data/
+*.log
+*.out
+historical_runs/

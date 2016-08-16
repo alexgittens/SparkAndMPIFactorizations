@@ -1,0 +1,24 @@
+to run on edison:
+First go into a spark job and start the cluster (either interactively or in the batch job do:)
+
+cd /scratch1/scratchdirs/beehive/cxedisonruns
+SCRIPTPATH=~/cx/sc-2015/cx_spark/src/edisonscripts
+
+$SCRIPTPATH/runsmall.sh 960 16 0 5 ""   $PWD
+$SCRIPTPATH/runsmall.sh 960 16 0 5 960  $PWD
+$SCRIPTPATH/runsmall.sh 960 16 0 5 1920 $PWD
+
+$SCRIPTPATH/runsmall.sh 960 32 0 5 ""   $PWD
+$SCRIPTPATH/runsmall.sh 960 32 0 5 960  $PWD
+$SCRIPTPATH/runsmall.sh 960 32 0 5 1920 $PWD
+
+$SCRIPTPATH/runbig.sh 960 16 0 5 ""   $PWD
+$SCRIPTPATH/runbig.sh 960 16 0 5 4800 $PWD
+$SCRIPTPATH/runbig.sh 960 16 0 5 9600 $PWD
+
+$SCRIPTPATH/runbig.sh 960 32 0 5 ""   $PWD
+$SCRIPTPATH/runbig.sh 960 32 0 5 4800 $PWD
+$SCRIPTPATH/runbig.sh 960 32 0 5 9600 $PWD
+
+
+

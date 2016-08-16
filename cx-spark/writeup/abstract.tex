@@ -1,0 +1,22 @@
+We investigate the performance, scalability, and applicability of low-rank
+matrix approximation algorithms, including randomized PCA and randomized CX/CUR
+low-rank matrix factorizations, on a 1 TB mass spectrometry imaging (MSI)
+dataset, using Apache Spark on an Amazon~EC2 cluster, a Cray~XC40 system, and
+an experimental Cray cluster. While these low-rank matrix computations are
+popular in small- to medium-scale machine learning and scientific data
+analysis, computing them provides a much more powerful ``stress test'' of linear
+algebra algorithms in large-scale distributed analytics frameworks than is
+provided by, e.g., low-precision PageRank computations. In addition,
+scientific applications such as MSI data analysis provide a very different use
+case than is provided by typical commercial workloads. We implemented these
+algorithms using a close-to-the-metal parallelized C implementation and in Scala
+using the Apache Spark high-level cluster computing framework. We obtained
+competitive performance on all three platforms; using Spark we were able to
+process the 1TB size dataset in under 30 minutes with 960 cores on all systems,
+with the fastest times obtained on the experimental Cray cluster. In
+comparison, the C implementation was 21X faster (on an Amazon EC2 system), due
+to careful cache optimizations, bandwidth-friendly access of matrices and
+vector computation using SIMD units. We report these results, and conclude
+with broader implications on the hardware and software issues arising in
+supporting data-centric workloads in parallel and distributed environments.
+

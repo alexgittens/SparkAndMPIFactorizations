@@ -1,0 +1,90 @@
+This is a collection of codes for performing CX decomposition on Spark.
+
+----------------------------------------------------------------------------------
+CX decomposition:
+Given a matrix A with size m by n, CX decomposition aims at finding columns of A 
+such that linear combinations of these columns can reconstruct A well.
+Here, we use an equivalent formulation of CX decomposition. That is, we want to find matrices
+R and Y such that || A - YR || is as small as possible where R is r by n consisting r columns of A
+and Y is a matrix with size m by r. It consists of the following two three steps:
+
+1. Estimate the row leverage scores associated with rank parameter k.
+2. Choose r rows from A based on the leverage scores in a deterministic or randomized manner, denoted by R.
+3. Compute Y based on R.
+----------------------------------------------------------------------------------
+About inputs:
+We assume input matrix A is stored in plain text format and A is rectangular.
+The following three files are needed (the latter two are for testing purposes):
+{dataset}.txt         input matrix A
+{dataset}_U.txt       matrix U that contains the left-singluar vectors of A
+{dataset}_D.txt       singular values of A
+----------------------------------------------------------------------------------
+About outputs:
+As introduced above, there are three stages in the CX decomposition.
+The algorithm can be terminated at any stages by using flags (see usage).
+We respectively call the three stages as:
+leverage               return the estimated row leverage scores and evaluate its accuracy
+indices                return the selected row indices
+full                   perform the full CX decomposition and evaluate the reconstruction error
+----------------------------------------------------------------------------------
+usage: run_cx.sh [-h] --dims m n [--sparse] [--hdfs] [-k targetRank]
+                 [-r numRowsToSelect] [-q numIters] [--deterministic] [-c]
+                 [-t] [-s] [--nrepetitions numRepetitions]
+                 [--npartitions numPartitions] [--row | --column]
+                 [--leverage-scores-only | --indices-only]
+                 dataset
+
+Getting parameters.
+
+positional arguments:
+  dataset               dataset.txt stores the input matrix to run CX on;
+                        dataset_U.txt stores left-singular vectors of the
+                        input matrix (only needed for -t); dataset_D.txt
+                        stores singular values of the input matrix (only
+                        needed for -t)
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --dims m n            size of the input matrix
+  --sparse              whether the data is sparse
+  --hdfs                load dataset from HDFS
+  -k targetRank, --rank targetRank
+                        target rank parameter in the definition of leverage
+                        scores, this value shoud not be greater than m or n
+  -r numRowsToSelect    number of rows to select in CX
+  -q numIters, --niters numIters
+                        number of iterations to run in approximation of
+                        leverage scores
+  --deterministic       use deterministic scheme instead of randomized when
+                        selecting rows
+  -c, --cache           cache the dataset in Spark
+  -t, --test            compute accuracies of the returned solutions
+  -s, --save_logs       save Spark logs
+  --nrepetitions numRepetitions
+                        number of times to stack matrix vertically in order to
+                        generate large matrices
+  --npartitions numPartitions
+                        number of partitions in Spark
+  --row                 compute row leverage scores
+  --column              compute column leverage scores
+  --leverage-scores-only
+                        return approximate leverage scores only
+  --indices-only        return approximate leverage scores and selected row
+                        indices only
+----------------------------------------------------------------------------------
+Example:
+./run_cx.sh unif_bad_100000_100 --dims 100000 100
+or
+./run_cx.sh unif_bad_100000_100 --dims 100000 100 -k 10 -r 30 -q 10 -c --deter --leverage
+or
+./run_cx.sh unif_bad_100000_100 --dims 100000 100 -k 10 -r 30 -q 10 -c -t --hdfs --col
+
+TO-DO list:
+- add various types of loading method
+- store results
+- load dataset directories from configuration file
+
+
+
+
+
