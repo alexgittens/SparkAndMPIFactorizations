@@ -1,15 +1,22 @@
-A collection of code for computing truncated PCAs (Spark and C/MPI),
+A WIP collection of code for computing truncated PCAs (Spark and C/MPI),
 Nonnegative Matrix Factorization (Spark and C/MPI), and randomized CX (Spark),
-used to compile the experimental results in 
+collated from the separate code-bases used to compile the experimental results
+in 
 
 "Matrix Factorization at Scale: a Comparison of Scientific Data Analytics in
 Spark and C+MPI Using Three Case Studies" by Alex Gittens, Aditya Devarakonda,
 Evan Racah, Michael Ringenburg, Lisa Gerhardt, Jey Kottaalam, et al.
 (technical report available at https://arxiv.org/abs/1607.01335)
 
-These codes were written to compile on the Cori NERSC System, so some of the
-compilation procedures will need to be changed for your system. See the
-relevant directories for further details.
+Originally, this code was for timing and producing output for specific
+scientific problems, so there are places where extra code not relevant to
+general purpose use is present and places where code that would be relevant for
+general purpose use (e.g., storing the C and X from the CX decomposition) is
+missing. These issues are being worked on.
+
+One specific issue worth noting is that these codes were written to compile on
+the Cori NERSC System, so some of the compilation procedures will need to be
+changed for your system. 
 
 Authors of the code:
   Alex Gittens (corresponding author: gittens@alumni.caltech.edu)
