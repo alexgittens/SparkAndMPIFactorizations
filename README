@@ -1,4 +1,4 @@
-A WIP collection of code for computing truncated PCAs (Spark and C/MPI),
+A collection of code for computing truncated PCAs (Spark and C/MPI),
 Nonnegative Matrix Factorization (Spark and C/MPI), and randomized CX (Spark),
 collated from the separate code-bases used to compile the experimental results
 in 
