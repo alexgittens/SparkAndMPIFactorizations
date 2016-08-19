@@ -104,7 +104,7 @@ object computeEOFs {
     //val convertTime = System.currentTimeMillis - convertStart
     println("LocalCompute: Convert EOF Time = " + (System.currentTimeMillis - convertStart))
     // Only uncomment if we need the EOFs, otherwise we really only care about timing information
-    //writeOutBasic(outdest, climateEOFs, info)
+    writeOutBasic(outdest, climateEOFs, info)
 
     report(s"U - ${climateEOFs.U.numRows}-by-${climateEOFs.U.numCols}")
     report(s"S - ${climateEOFs.S.size}")

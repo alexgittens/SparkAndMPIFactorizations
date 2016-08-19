@@ -1,0 +1,5 @@
+Runs NMF decomposition on the specified data. See build.sbt and
+src/computeNMF.sh for calling details. The input is provided in HDF5 format, so
+h5spark is required (included in the lib directory with its prerequisites, for
+Cori) -- you may need to recompile h5spark for your system. h5spark is
+available at https://github.com/valiantljk/h5spark

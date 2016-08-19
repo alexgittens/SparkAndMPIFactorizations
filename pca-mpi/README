@@ -1,0 +1,5 @@
+This code requires HDF5 and arpack-ng to be installed.  See the coriproduction
+target in the Makefile for the calling syntax.  Note that it computes the
+truncated PCA of *weighted* input data, with particular weights (appropriate
+for the climate science application this code was originally written for).
+To avoid weighting the data, remove the calls to rescaleRows and computeRowWeights.

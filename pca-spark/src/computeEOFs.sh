@@ -7,13 +7,5 @@
 CURDIR="$(cd "`dirname "$0"`"; pwd)"
 
 PLATFORM="CORI"
-#PLATFORM="EC2"
-
-#$CURDIR/runOneJob.sh $1 $PLATFORM 10 exact
-#$CURDIR/runOneJob.sh $1 $PLATFORM 10 randomized
 
 $CURDIR/runOneJob.sh $1 $PLATFORM 20 exact
-#$CURDIR/runOneJob.sh $1 $PLATFORM 20 randomized
-
-#$CURDIR/runOneJob.sh $1 $PLATFORM 40 exact
-#$CURDIR/runOneJob.sh $1 $PLATFORM 40 randomized

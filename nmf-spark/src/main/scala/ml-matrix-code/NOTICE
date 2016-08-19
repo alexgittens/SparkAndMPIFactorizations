@@ -1,0 +1,3 @@
+This code has been modified from the original version in ml-matrix
+(https://github.com/amplab/ml-matrix) to additionally track column norm
+information while the TSQR is being computed.

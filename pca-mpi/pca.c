@@ -4,8 +4,10 @@
 #include <stdlib.h>
 #include "cblas.h"
 #include "lapacke.h"
+#include <math.h>
 
-#define MAX_ITERS 70
+// NB: CBLAS has nonconstant overhead, because after operations, it stores the output in row major
+// TODO : read the dimensions from the input dataset
 
 extern void dsaupd_(int * ido, char * bmat, int * n, char * which,
                     int * nev, double * tol, double * resid, 
@@ -36,6 +38,7 @@ void flipcolslr(double * A, long m, long n);
 #define DEBUGATAFLAG 0
 #define DEBUG_DISTMATVEC_FLAG 0
 #define DISPLAY_FLAG 0
+#define MAX_ITERS 100000
 
 // Computes C = A'*(A*Omega)
 // Scratch should have the size of (A*Omega)
@@ -50,6 +53,15 @@ void multiplyAChunk(double A[], double Omega[], double C[], int rowsA, int colsA
 // computes A*mat and stores result on the rank 0 process in matProd
 void distributedMatMatProd(double mat[], double matProd[]);
 
+// computes means of the rows of A, subtracts them from A, and returns them  in meanVec
+void computeRowMeans(double meanVec[]);
+
+// rescales the rows of A by the given weights
+void rescaleRows(double weights[]);
+
+// loads the latitudes of each row from the given file, and returns the corresponding vector of row weights in rowWeights
+void loadRowWeights(char * weightsFname, double * rowWeights); 
+
 /* Local variables */
 int mpi_size, mpi_rank;
 MPI_Comm comm;
@@ -57,13 +69,17 @@ MPI_Info info;
 double * Alocal; // contains the batch of rows for this processor
 double * Scratch, * Scratch2, * Scratch3; //Scratch and Scratch2 are used in multiplyGramianChunk, Scratch3 in distributedMatMatProd
 double * AV;
+double * meanVec; // contains the vector of row means
+double * rowWeights; // contains the weights to multiply each row of A by
 int numcols, numrows, numeigs; // number of columns and rows in A, PCs desired
 int localrows, startingrow; // number of rows on this processor, index of the first row on this processor (0-based)
 int * elementcounts, * elementoffsets; // for an n-by-k matrix, contains the number of matrix elements on each processor, indices of the first element on each processor (only on rank 0)
+int * rowcounts, * rowoffsets; // for an n-by-k matrix, contains the number of rows on each processor, indices of the first row on each processor (only on rank 0)
+
 
 int main(int argc, char **argv) {
 
-    char * infilename, * datasetname, * outfname;
+    char * infilename, *weightsFname, * datasetname, * outfname;
 	double elapstr, elapstp;
     /* HDF5 API definitions */
     hid_t plist_id, daccess_id, file_id, dataset_id, filespace, memspace; 
@@ -79,14 +95,25 @@ int main(int argc, char **argv) {
     MPI_Comm_size(comm, &mpi_size);
     MPI_Comm_rank(comm, &mpi_rank);
 	elapstr = MPI_Wtime();
-	printf("Processor %d Finished MPI_Init().\n",mpi_rank);
+    
     infilename = argv[1];
     datasetname = argv[2];
-    numrows = atoi(argv[3]); // if you make this 6349440, the code will transparently ignore the remainder of the matrix
-    numcols = atoi(argv[4]);
-    numeigs = atoi(argv[5]);
-    outfname = argv[6];
-	
+    weightsFname = argv[3];
+    numrows = atoi(argv[4]);
+    numcols = atoi(argv[5]);
+    numeigs = atoi(argv[6]);
+    outfname = argv[7];
+
+    if (mpi_rank == 0) {
+        printf("Arguments:\n");
+        printf("\tInput filename: %s\n", infilename);
+        printf("\tInput dataset: %s\n", datasetname);
+        printf("\tRow to latitude mapping file: %s\n", weightsFname);
+        printf("\tRow count: %d\n", numrows);
+        printf("\tColumn count: %d\n", numcols);
+        printf("\tTarget rank: %d\n", numeigs);
+        printf("\tOutput filename: %s\n", outfname);
+    }
 
     /* Allocate the correct portion of the input to each processor */
     double rdmtxstr = MPI_Wtime();
@@ -104,25 +131,39 @@ int main(int argc, char **argv) {
         startingrow = bigPartitionSize*numBigPartitions + 
                       littlePartitionSize*(mpi_rank - numBigPartitions);
     }
+    //printf("Rank %d: assigned %d rows, %d--%d\n", mpi_rank, localrows, startingrow, startingrow + localrows - 1);
 
+    // assuming double inputs, check that the chunks aren't too big to be read by HDF5 in parallel mode
+    if (bigPartitionSize*numcols >= 268435456 && mpi_rank == 0) {
+        printf("Error: MPIIO-based HDF5 is limited to reading 2GiB at most in each call to read; try increasing the number of processors\n");
+        exit(-1);
+    }
+
+    // compute some counts and offsets needed for MPI gatherv-type operations
     if (mpi_rank == 0) {
         elementcounts = (int *) malloc( mpi_size * sizeof(int));
         elementoffsets = (int *) malloc( mpi_size * sizeof(int));
+        rowcounts = (int *) malloc( mpi_size * sizeof(int));
+        rowoffsets = (int *) malloc( mpi_size * sizeof(int));
         int idx;
         for(idx = 0; idx < numBigPartitions; idx = idx + 1) {
             elementcounts[idx] = bigPartitionSize * numeigs;
             elementoffsets[idx] = bigPartitionSize * numeigs * idx;
+
+            rowcounts[idx] = bigPartitionSize;
+            rowoffsets[idx] = bigPartitionSize * idx;
         }
         for(idx = numBigPartitions; idx < mpi_size; idx = idx + 1) {
             elementcounts[idx] = littlePartitionSize * numeigs;
             elementoffsets[idx] = bigPartitionSize * numeigs * numBigPartitions + 
                               littlePartitionSize * numeigs * (idx - numBigPartitions);
+
+            rowcounts[idx] = littlePartitionSize;
+            rowoffsets[idx] = bigPartitionSize * numBigPartitions + littlePartitionSize * (idx - numBigPartitions);
         }
     }
 
-    //printf("Rank %d: assigned %d rows, %d--%d\n", mpi_rank, localrows, startingrow, startingrow + localrows - 1);
-
-    /* Load my portion of the data */
+    /* Load my portion of the data, compute row means, and center the rows */
 
     plist_id = H5Pcreate(H5P_FILE_ACCESS);
     H5Pset_fapl_mpio(plist_id, comm, info);
@@ -138,6 +179,10 @@ int main(int argc, char **argv) {
 
     filespace = H5Dget_space(dataset_id);
     status = H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
+    if (status < 0) {
+        printf("Error selecting input file hyperslab in process %d\n", mpi_rank);
+        exit(-1);
+    }
 
     memspace = H5Screate_simple(2, count, NULL);
     offset_out[0] = 0;
@@ -145,6 +190,10 @@ int main(int argc, char **argv) {
     Alocal = (double *) malloc( localrows * numcols *sizeof(double));
     status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, offset_out, NULL, count, NULL);
     daccess_id = H5Pcreate(H5P_DATASET_XFER);
+    if (status < 0) {
+        printf("Error selecting memory hyperslab in process %d\n", mpi_rank);
+        exit(-1);
+    }
     if (Alocal == NULL) {
         printf("Out of memory in process %d\n", mpi_rank);
         exit(-1);
@@ -154,12 +203,13 @@ int main(int argc, char **argv) {
 
     //MPI_Barrier(comm);
     if (mpi_rank == 0) {
-        printf("Starting to load matrix\n");
+        printf("Loading matrix\n");
     }
     status = H5Dread(dataset_id, H5T_NATIVE_DOUBLE, memspace, filespace, daccess_id, Alocal);
-    if (mpi_rank == 0) {
-        printf("Finished loading matrix\n");
-     }
+    if (status < 0) {
+        printf("Error reading from file (after hyperslab selections) in process %d\n", mpi_rank);
+        exit(-1);
+    }
 
     H5Pclose(daccess_id);
     H5Dclose(dataset_id);
@@ -169,11 +219,23 @@ int main(int argc, char **argv) {
     H5Fclose(file_id);
 
 	double rdmtxstp = MPI_Wtime();
-	if(mpi_rank == 0)
+	if(mpi_rank == 0) {
 		printf("Time to readHDF5 matrix: %f\n", rdmtxstp - rdmtxstr); 
-
-
+    }
 	
+    double pdmtxstr = MPI_Wtime();
+    if (mpi_rank == 0) {
+        meanVec = malloc(numrows * sizeof(double));
+        rowWeights = malloc(numrows * sizeof(double));
+        loadRowWeights(weightsFname, rowWeights);
+    }
+    computeRowMeans(meanVec);
+    rescaleRows(rowWeights);
+    double pdmtxstp = MPI_Wtime();
+    if (mpi_rank == 0) {
+        printf("Time to preprocess the data (center rows and weight rows by sqrt(cos(lat))): %f\n", pdmtxstp - pdmtxstr);
+    }
+
     double * vector = (double *) malloc( numcols * sizeof(double));
     Scratch = (double *) malloc( localrows * sizeof(double));
     Scratch2 = (double *) malloc( numcols * sizeof(double));
@@ -184,35 +246,6 @@ int main(int argc, char **argv) {
     if (vector == NULL || Scratch == NULL || Scratch2 == NULL || Scratch3 == NULL || singVals == NULL || rightSingVecs == NULL) {
         printf("Out of memory on process %d\n", mpi_rank);
         exit(-1);
-    }
-
-    // Check that the distributed matrix-vector multiply against A^TA works
-    if (DEBUGATAFLAG) { 
-       // display rows so we can check they're loaded correctly
-        int rowIdx;
-        char rowlabel[50];
-        for( rowIdx = 0; rowIdx < localrows; rowIdx = rowIdx + 1) {
-            sprintf(rowlabel, "row %d, on process %d: ", rowIdx + startingrow, mpi_rank);
-            printvec(rowlabel, Alocal + rowIdx*numcols, numcols);
-        }
-
-        // distribute the initial vector
-        if (mpi_rank == 0) {
-            int idx;
-            for( idx = 0; idx < numcols; idx = idx + 1) {
-                vector[idx] = idx + 1;
-            } 
-            printvec("test vector: ", vector, numcols);
-        }
-        MPI_Bcast(vector, numcols, MPI_DOUBLE, 0, comm);
-
-        // distributed matrix-vector product
-        distributedGramianVecProd(vector);
-
-       // display final product
-       if (mpi_rank == 0) {
-           printvec(" A * test vector: ", vector, numcols);
-       }
     }
 
     // initial call to arpack
@@ -240,12 +273,13 @@ int main(int argc, char **argv) {
 
     // initialize ARPACK
     if (mpi_rank == 0) {
+        printf("Computing the EVD of the Gram matrix\n");
         dsaupd_(&ido, &bmat, &numcols, which,
                 &numeigs, &tol, resid,
                 &ncv, v, &numcols,
                 iparam, ipntr, workd,
                 workl, &lworkl, &arpack_info);
-        printf("Info : %d\n", arpack_info);
+        //printf("Info : %d\n", arpack_info);
         cblas_dcopy(numcols, workd + ipntr[0] - 1, 1, vector, 1); 
         //printf("ipntr[0] - 1 = %d, should be less than %d\n", ipntr[0] - 1, 3*numcols); 
     }
@@ -257,9 +291,9 @@ int main(int argc, char **argv) {
 	double tgrammv = 0., grammvstr, grammvstp;
 	double tarpk = 0., arpkstr, arpkstp;
 	while(niters < MAX_ITERS) {
-            if (mpi_rank == 0) {
+            /*if (mpi_rank == 0) {
                 printf("Return code %d\n", ido);
-            }
+            }*/
             if (ido == 1 || ido == -1) {
 				grammvstr = MPI_Wtime();
                 distributedGramianVecProd(vector);
@@ -288,17 +322,26 @@ int main(int argc, char **argv) {
     	niters++;
 	}
 
+    if (mpi_rank == 0) {
+        if (niters == MAX_ITERS) {
+            printf("Terminated eval decomposition due to reaching max_iters mat-vec products: %d\n", MAX_ITERS);
+        } else {
+            printf("Completed eval decomposition after %d mat-vec products\n", niters);
+        }
+    }
+
 	if(mpi_rank == 0){
-		printf("Time to perfom distributed Gram matrix-vectors: %f\n", tgrammv); 
+		printf("Time to perform distributed Gram matrix-vectors: %f\n", tgrammv); 
 		printf("Time spend in arpack: %f\n", tarpk); 
 	}
-	
+
 
     if (mpi_rank == 0) {
         int num_iters = iparam[8];
         int num_evals = iparam[4];
         double trtzstr = MPI_Wtime();
 		printf("Used %d matrix-vector products to converge to %d eigenvalue\n", num_iters, num_evals);
+        printf("Extracting the right singular vectors\n");
         //printf("Return value: %d\n", arpack_info);
 
         int rvec = 1; // compute Ritz vectors
@@ -334,7 +377,10 @@ int main(int argc, char **argv) {
         free(svtranspose); 
         free(select);
     }
-	//printf("Performing a broadcast\n");
+
+    if (mpi_rank ==0) {
+        printf("Computing AV\n");
+    }
     double tcompavstr, tcompavstp;
 	tcompavstr = MPI_Wtime();
 	MPI_Bcast(rightSingVecs, numeigs*numcols, MPI_DOUBLE, 0, comm);
@@ -350,6 +396,8 @@ int main(int argc, char **argv) {
     // dgesdd returns its singular values in descending order
     // note that the right singular vectors of AV should by definition be the identity 
     if (mpi_rank == 0) {
+
+        printf("Computing the SVD of AV\n");
         double tsddstr, tsddstp;
 		tsddstr = MPI_Wtime();
 		double * U = (double *) malloc( numrows * numeigs * sizeof(double));
@@ -366,9 +414,8 @@ int main(int argc, char **argv) {
         printmat("top left singular vectors of A\n", U, numrows, numeigs);
         printmat("top right singular vectors of A\n", finalV, numcols, numeigs);
 
-		//For timing, comment out writing output files.
-		/*
-		 *
+        // Write the output
+        printf("Writing the output of the SVD to file\n");
         file_id = H5Fcreate(outfname, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
         hsize_t dims[2];
         hid_t dataspace_id;
@@ -397,10 +444,23 @@ int main(int argc, char **argv) {
         H5Dclose(dataset_id);
         H5Sclose(dataspace_id);
 
+        dims[0] = numrows;
+        dataspace_id = H5Screate_simple(1, dims, NULL);
+        dataset_id = H5Dcreate2(file_id, "/rowMeans", H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, dataspace_id, plist_id, meanVec);
+        H5Dclose(dataset_id);
+        H5Sclose(dataspace_id);
+
+        dims[0] = numrows;
+        dataspace_id = H5Screate_simple(1, dims, NULL);
+        dataset_id = H5Dcreate2(file_id, "/rowWeights", H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, dataspace_id, plist_id, rowWeights);
+        H5Dclose(dataset_id);
+        H5Sclose(dataspace_id);
+
         H5Pclose(plist_id);
         H5Fclose(file_id);
-		*
-		*/
+
         free(U);
         free(VT);
         free(finalV);
@@ -417,12 +477,47 @@ int main(int argc, char **argv) {
     if(mpi_rank == 0){
 		free(elementcounts);
     	free(elementoffsets);
+        free(rowcounts);
+        free(rowoffsets);
+        free(meanVec);
+        free(rowWeights);
     }
 	elapstp = MPI_Wtime();
 	if(mpi_rank == 0)
 		printf("Total PCA elapsed time: %f\n", elapstp - elapstr);
 	MPI_Finalize();
     return 0;
+}
+
+// computes means of the rows of A, subtracts them from A, and returns them in meanVec on the root process
+// assumes memory has already been allocated
+void computeRowMeans(double meanVec[]) {
+    double * onesVec = (double *) malloc( numcols * sizeof(double));
+    double * localMeanVec = (double *) malloc( localrows * sizeof(double));
+    cblas_dgemv(CblasRowMajor, CblasNoTrans, localrows, numcols, 1.0/((double)numcols), Alocal, numcols, onesVec, 1, 0, localMeanVec, 1);
+    cblas_dger(CblasRowMajor, localrows, numcols, -1.0, localMeanVec, 1, onesVec, 1, Alocal, numcols);
+    if (mpi_rank != 0) {
+        MPI_Gatherv(localMeanVec, localrows, MPI_DOUBLE, NULL, NULL, NULL, MPI_DOUBLE, 0, comm);
+    } else {
+        MPI_Gatherv(localMeanVec, localrows, MPI_DOUBLE, meanVec, rowcounts, rowoffsets, MPI_DOUBLE, 0, comm);
+    }
+    free(onesVec);
+    free(localMeanVec);
+}
+
+// rescales the rows of A by the given weights
+// weights only needs to be defined on the root process
+void rescaleRows(double weights[]) {
+    double * localweights = (double *) malloc( localrows * sizeof(double));
+    if(mpi_rank != 0) {
+        MPI_Scatterv(NULL, rowcounts, rowoffsets, MPI_DOUBLE, localweights, localrows, MPI_DOUBLE, 0, comm);
+    } else {
+        MPI_Scatterv(weights, rowcounts, rowoffsets, MPI_DOUBLE, localweights, localrows, MPI_DOUBLE, 0, comm);
+    }
+    int rowIdx;
+    for(rowIdx = 0; rowIdx < localrows; rowIdx = rowIdx + 1)
+        cblas_dscal(numcols, localweights[rowIdx], Alocal + (rowIdx*numcols), 1);
+    free(localweights);
 }
 
 // computes A^T*A*v and stores back in v
@@ -526,4 +621,23 @@ void flipcolslr(double * A, long m, long n) {
         cblas_dswap(m, A + idx, n, A + (n - 1 - idx), n);
 		//printf("Performed flipcolslr idx: %d/%d. m: %d. n: %d\n", idx, n/2, m , n);
     }
+}
+
+// loads the latitudes of each row from the given file, and returns the corresponding vector of row weights in rowWeights
+// expects each line of the file to be in the form ^idx,latitude$
+// returns sqrt(cos(lat)) as the weights vector
+void loadRowWeights(char * weightsFname, double * rowWeights) {
+    int rowIdx;
+    double latVal;
+    FILE * fin = fopen(weightsFname, "r");
+
+    if( fin == NULL ) {
+        fprintf(stderr, "Can't open latitude csv file %s!\n", weightsFname);
+        exit(1);
+    }
+    while(fscanf(fin, "%d,%lf", &rowIdx, &latVal) != EOF) {
+        rowWeights[rowIdx] = sqrt(cos(latVal));
+        //printf("Read %d: %lf\n", rowIdx, latVal);
+    }
+    fclose(fin);
 }

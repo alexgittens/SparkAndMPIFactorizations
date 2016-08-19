@@ -1,0 +1,30 @@
+This code takes as input an HDF5 dataset and computes a truncated PCA. It
+relies on h5spark (a version that works on Cori is included in the libs
+directory, you may need to recompile), available at
+https://github.com/valiantljk/h5spark
+
+Before running ensure that there are directories named "data" and "eventLogs"
+in the base repo directory
+
+Next edit these files:
+- src/computeEOFs.sh : here you should define the PLATFORM variable ("EC2", "CORI") and invoke src/runOneJob.sh several times to 
+  run experiments varying the type of PCA ("exact", "randomized") and the number of PCs 
+- src/runOneJob.sh : here you should define the inputs that vary according to the platform (location of the source data, the spark master URL, the executor memory and core settings, etc)
+
+Now you can run experiments (assuming you have salloc-ed and started Spark as needed on the HPC platforms) with 
+"sbt submit"
+See runeofs.slrm for an example of using sbatch to run experiments on Cori
+
+The console logs are saved to the base repo directory, and the event logs are stored to the eventLogs subdirectory
+
+Quick overview of the algorithm:
+
+We want to compute the rank-k truncated PCA of a tall-skinny matrix A. We first
+process A so that it has mean zero rows.  We then compute the top-k right
+singular vectors of A, V_k. We obtain V_k by calling MLLib's ARPACK binding to
+get the top k eigenvectors of A^TA using a distributed matrix-vector multiply
+against A^TA (this matrix is never explicitly computed, instead we compute the
+matrix-vector product). Once V_k is known, we take an SVD on AV_k, which fits
+locally in one machine. These SVD factors are then combined with V_k to give us
+our final truncated PCA of A.
+
